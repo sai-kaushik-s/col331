@@ -1,0 +1,23 @@
+# Work In progress
+
+name: Validate Running
+
+on:
+  pull_request:
+    branches:
+      - '**'
+    types: [ labeled ]
+  workflow_dispatch:
+    branches:
+      - '**'
+
+jobs:
+  build:
+    # if: ${{ github.event.label.name == 'bug/fix' }}
+    runs-on: ubuntu-latest
+
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Say hello world, just checking
+      run: echo Hello, world!
