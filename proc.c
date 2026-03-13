@@ -249,39 +249,22 @@ wakeup(void *chan)
   release(&ptable.lock);
 }
 
-// Atomically release lock and sleep on chan.
-// Reacquires lock when awakened.
 void
-sleep(void *chan, struct spinlock *lk)
+sleep(void *chan)
 {
   struct proc *p = myproc();
-  
+
   if(p == 0)
     panic("sleep");
-
-  if(lk == 0)
-    panic("sleep without lk");
-
-  // Must acquire ptable.lock in order to
-  // change p->state and then call sched.
-  if(lk != &ptable.lock){
-    acquire(&ptable.lock);
-    release(lk);
-  }
 
   // Go to sleep.
   p->chan = chan;
   p->state = SLEEPING;
+  
   sched();
 
   // Tidy up.
   p->chan = 0;
-
-  // Reacquire original lock.
-  if(lk != &ptable.lock){
-    release(&ptable.lock);
-    acquire(lk);
-  }
 }
 
 

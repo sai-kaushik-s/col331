@@ -105,7 +105,7 @@ void            scheduler(void) __attribute__((noreturn));
 void            procdump(void);
 void            yield(void);
 void             forkret(void);
-void            sleep(void*, struct spinlock*);
+void            sleep(void*);
 void            wakeup(void*);
 
 // sleeplock.c

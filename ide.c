@@ -154,7 +154,7 @@ iderw(struct buf *b)
     idestart(b);
   
   while((b->flags & (B_VALID|B_DIRTY)) != B_VALID){
-    sleep(b, &idelock); 
+    sleep(b); 
   }
 
   release(&idelock);
