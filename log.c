@@ -129,14 +129,10 @@ begin_op(void)
   acquire(&log.lock);
   while(1){
     if(log.committing){
-      release(&log.lock);
-      sleep(&log);
-      acquire(&log.lock);
+      sleep(&log, &log.lock);
     } else if(log.lh.n + (log.outstanding+1)*MAXOPBLOCKS > LOGSIZE){
       // this op might exhaust log space; wait for commit.
-      release(&log.lock);
-      sleep(&log);
-      acquire(&log.lock);
+      sleep(&log, &log.lock);
     } else {
       log.outstanding += 1;
       release(&log.lock);

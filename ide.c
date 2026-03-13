@@ -154,9 +154,7 @@ iderw(struct buf *b)
     idestart(b);
   
   while((b->flags & (B_VALID|B_DIRTY)) != B_VALID){
-    release(&idelock); // Must release before sleeping!
-    sleep(b); 
-    acquire(&idelock); // Must reacquire after waking!
+    sleep(b, &idelock); 
   }
 
   release(&idelock);
