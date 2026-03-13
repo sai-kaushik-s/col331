@@ -257,6 +257,8 @@ sleep(void *chan)
   if(p == 0)
     panic("sleep");
 
+  // We MUST hold ptable.lock to call sched(), otherwise xv6 panics!
+  acquire(&ptable.lock);
   // Go to sleep.
   p->chan = chan;
   p->state = SLEEPING;
@@ -265,6 +267,7 @@ sleep(void *chan)
 
   // Tidy up.
   p->chan = 0;
+  release(&ptable.lock);
 }
 
 
