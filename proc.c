@@ -1,11 +1,18 @@
 #include "types.h"
 #include "defs.h"
-#include "param.h"
-#include "memlayout.h"
-#include "mmu.h"
 #include "x86.h"
-#include "proc.h"
 #include "spinlock.h"
+#include "sleeplock.h"
+#include "fs.h"
+#include "buf.h"
+#include "param.h"
+#include "stat.h"
+#include "file.h"
+#include "fcntl.h"
+#include "mmu.h"
+#include "proc.h"
+#include "memlayout.h"
+
 
 struct {
   struct spinlock lock;
@@ -187,12 +194,98 @@ yield(void)
   release(&ptable.lock);
 }
 
+
 void
 forkret(void)
 {
-  // Release the lock held by the scheduler
+  static int first = 1;
+  static volatile int init_done = 0; // <-- New global flag
+  int is_first;
+
+  // 1. Check the flag while we hold the scheduler lock
+  is_first = first;
+  if(first)
+    first = 0;
+
+  // 2. Safe to release the lock now
+  release(&ptable.lock);
+
+  // 3. Process 1 does the heavy lifting
+  if (is_first) {
+    iinit(ROOTDEV);
+    initlog(ROOTDEV);
+    struct inode console;
+    mknod(&console, "console", CONSOLE, CONSOLE);
+    
+    init_done = 1; // <-- Signal that the disk is ready!
+  } else {
+    // 4. Any other process must patiently wait
+    while(init_done == 0) {
+      yield(); // Give the CPU back to the OS until Process 1 finishes
+    }
+  }
+
+  // Return to "caller", actually trapret (see allocproc).
+}
+
+// Wake up all processes sleeping on chan.
+// The ptable lock must be held.
+static void
+wakeup1(void *chan)
+{
+  struct proc *p;
+
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+    if(p->state == SLEEPING && p->chan == chan)
+      p->state = RUNNABLE;
+}
+
+// Wake up all processes sleeping on chan.
+void
+wakeup(void *chan)
+{
+  acquire(&ptable.lock);
+  wakeup1(chan);
   release(&ptable.lock);
 }
+
+// Atomically release lock and sleep on chan.
+// Reacquires lock when awakened.
+void
+sleep(void *chan, struct spinlock *lk)
+{
+  struct proc *p = myproc();
+  
+  if(p == 0)
+    panic("sleep");
+
+  if(lk == 0)
+    panic("sleep without lk");
+
+  // Must acquire ptable.lock in order to
+  // change p->state and then call sched.
+  if(lk != &ptable.lock){
+    acquire(&ptable.lock);
+    release(lk);
+  }
+
+  // Go to sleep.
+  p->chan = chan;
+  p->state = SLEEPING;
+  sched();
+
+  // Tidy up.
+  p->chan = 0;
+
+  // Reacquire original lock.
+  if(lk != &ptable.lock){
+    release(&ptable.lock);
+    acquire(lk);
+  }
+}
+
+
+
 
 void
 procdump(void)
