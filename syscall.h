@@ -6,3 +6,5 @@
 #define SYS_fork    5
 #define SYS_wait    6
 #define SYS_exit    7
+#define SYS_getpid  8
+#define SYS_kill    9

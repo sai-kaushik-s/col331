@@ -10,3 +10,5 @@ void printf(int, const char*, ...);
 int fork(void);
 int wait(void);
 int exit(void) __attribute__((noreturn));
+int getpid(void);
+int kill(int);
