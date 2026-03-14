@@ -7,5 +7,6 @@ int exec(char*);
 // ulib.c
 void printf(int, const char*, ...);
 
-
 int fork(void);
+int wait(void);
+int exit(void) __attribute__((noreturn));

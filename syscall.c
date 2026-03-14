@@ -88,14 +88,18 @@ extern int sys_close(void);
 extern int sys_open(void);
 extern int sys_write(void);
 extern int sys_exec(void);
-extern int sys_fork(void);  // <-- ADDED THIS
+extern int sys_fork(void);
+extern int sys_wait(void);
+extern int sys_exit(void);  
 
 static int (*syscalls[])(void) = {
 [SYS_open]    sys_open,
 [SYS_write]   sys_write,
 [SYS_close]   sys_close,
 [SYS_exec]    sys_exec,
-[SYS_fork]    sys_fork,     // <-- ADDED THIS
+[SYS_fork]    sys_fork,
+[SYS_wait]    sys_wait,
+[SYS_exit]    sys_exit,     
 };
 
 void
@@ -118,4 +122,17 @@ int
 sys_fork(void)
 {
   return fork();
+}
+
+int
+sys_wait(void)
+{
+  return wait();
+}
+
+int
+sys_exit(void)
+{
+  exit();
+  return 0;  // Not reached
 }
