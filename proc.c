@@ -194,6 +194,55 @@ yield(void)
   release(&ptable.lock);
 }
 
+int
+fork(void)
+{
+  int i, pid;
+  struct proc *np;
+  struct proc *curproc = myproc();
+
+  // 1. Allocate a new process from the process table
+  if((np = allocproc()) == 0){
+    return -1;
+  }
+
+  // 2. Copy the entire user memory segment
+  // In p23's segmentation model, the physical memory starts at np->offset
+  // and the size of the user space is curproc->sz
+  memmove(np->offset, curproc->offset, curproc->sz);
+
+  // 3. Copy the trap frame so the child has the exact same register states
+  *np->tf = *curproc->tf;
+
+  // 4. Force the child's return value for fork() to be 0 (stored in eax)
+  np->tf->eax = 0;
+
+  // 5. Duplicate open file descriptors
+  for(i = 0; i < NOFILE; i++) {
+    if(curproc->ofile[i]) {
+      np->ofile[i] = filedup(curproc->ofile[i]);
+    }
+  }
+  
+  // Duplicate the current working directory reference
+  if(curproc->cwd) {
+    np->cwd = iget(curproc->cwd->dev, curproc->cwd->inum);
+  }
+
+  // 6. Set parent process and copy process name
+  np->parent = curproc;
+  safestrcpy(np->name, curproc->name, sizeof(curproc->name));
+
+  pid = np->pid;
+
+  // 7. Acquire the lock and mark the child as runnable
+  acquire(&ptable.lock);
+  np->state = RUNNABLE;
+  release(&ptable.lock);
+
+  return pid;
+}
+
 
 void
 forkret(void)

@@ -6,3 +6,6 @@ int exec(char*);
 
 // ulib.c
 void printf(int, const char*, ...);
+
+
+int fork(void);

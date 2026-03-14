@@ -88,12 +88,14 @@ extern int sys_close(void);
 extern int sys_open(void);
 extern int sys_write(void);
 extern int sys_exec(void);
+extern int sys_fork(void);  // <-- ADDED THIS
 
 static int (*syscalls[])(void) = {
 [SYS_open]    sys_open,
 [SYS_write]   sys_write,
 [SYS_close]   sys_close,
 [SYS_exec]    sys_exec,
+[SYS_fork]    sys_fork,     // <-- ADDED THIS
 };
 
 void
@@ -110,4 +112,10 @@ syscall(void)
             curproc->pid, curproc->name, num);
     curproc->tf->eax = -1;
   }
+}
+
+int
+sys_fork(void)
+{
+  return fork();
 }
