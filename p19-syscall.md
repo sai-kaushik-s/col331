@@ -9,11 +9,11 @@ OS, we see that our processes are able to print something to the console. This
 is implemented using *system calls*. Essentially, system calls allow processes
 to ask the OS to do some work on their behalf. System calls reuse the hardware's
 trap handling mechanism. Previously, when an hardware interrupt (like a timer
-interrupt) occured, the hardware was saving all the registers, moving from ring
+interrupt) occurred, the hardware was saving all the registers, moving from ring
 3 to ring 0, and then giving control to the OS. OS would handle the interrupt,
 restore the registers, and give control back to the process.
 
-System calls reuse this functionality but with the only difference that the
+System calls reuse this functionality but with the only difference being that the
 traps are now *software-generated* using the `int` instruction.  We can see that
 the `initcode.S` code jumps into `init.c` which first `open`s the console device
 in write only mode, then it `write`s a string to the device, and finally
