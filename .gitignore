@@ -7,3 +7,4 @@ kernel
 kernel.sym
 vectors.S
 xv6.img
+.DS_Store
