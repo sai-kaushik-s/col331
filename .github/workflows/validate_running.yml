@@ -6,7 +6,7 @@ on:
   pull_request:
     branches:
       - '**'
-    types: [ label ]
+    types: [ labeled, unlabeled, assigned, unassigned ]
   workflow_dispatch:
     branches:
       - '**'
