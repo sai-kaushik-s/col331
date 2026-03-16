@@ -1,9 +1,9 @@
 #include "types.h"
 #include "defs.h"
 #include "param.h"
-#include "spinlock.h"
 #include "fs.h"
 #include "buf.h"
+#include "spinlock.h"
 
 // Simple logging that allows concurrent FS system calls.
 //
@@ -39,7 +39,6 @@ struct log {
   struct spinlock lock;
   int start;
   int size;
-  int outstanding; // how many FS sys calls are executing.
   int committing;  // in commit(), please wait.
   int dev;
   struct logheader lh;
@@ -55,8 +54,9 @@ initlog(int dev)
   if (sizeof(struct logheader) >= BSIZE)
     panic("initlog: too big logheader");
 
-  struct superblock sb;
   initlock(&log.lock, "log");
+
+  struct superblock sb;
   readsb(dev, &sb);
   log.start = sb.logstart;
   log.size = sb.nlog;
@@ -124,19 +124,7 @@ recover_from_log(void)
 void
 begin_op(void)
 {
-  acquire(&log.lock);
-  while(1){
-    if(log.committing){
-      sleep(&log);
-    } else if(log.lh.n + (log.outstanding+1)*MAXOPBLOCKS > LOGSIZE){
-      // this op might exhaust log space; wait for commit.
-      sleep(&log);
-    } else {
-      log.outstanding += 1;
-      release(&log.lock);
-      break;
-    }
-  }
+  
 }
 
 // called at the end of each FS system call.
@@ -144,32 +132,9 @@ begin_op(void)
 void
 end_op(void)
 {
-  int do_commit = 0;
-
-  acquire(&log.lock);
-  log.outstanding -= 1;
-  if(log.committing)
-    panic("log.committing");
-  if(log.outstanding == 0){
-    do_commit = 1;
-    log.committing = 1;
-  } else {
-    // begin_op() may be waiting for log space,
-    // and decrementing log.outstanding has decreased
-    // the amount of reserved space.
-    wakeup(&log);
-  }
-  release(&log.lock);
-
-  if(do_commit){
-    // call commit w/o holding locks, since not allowed
-    // to sleep with locks.
-    commit();
-    acquire(&log.lock);
-    log.committing = 0;
-    wakeup(&log);
-    release(&log.lock);
-  }
+  // call commit w/o holding locks, since not allowed
+  // to sleep with locks.
+  commit();
 }
 
 // Copy modified blocks from cache to log.
@@ -214,12 +179,11 @@ log_write(struct buf *b)
 {
   int i;
 
+  acquire(&log.lock);
+
   if (log.lh.n >= LOGSIZE || log.lh.n >= log.size - 1)
     panic("too big a transaction");
-  if (log.outstanding < 1)
-    panic("log_write outside of trans");
 
-  acquire(&log.lock);
   for (i = 0; i < log.lh.n; i++) {
     if (log.lh.block[i] == b->blockno)   // log absorbtion
       break;
@@ -227,7 +191,7 @@ log_write(struct buf *b)
   log.lh.block[i] = b->blockno;
   if (i == log.lh.n)
     log.lh.n++;
-  b->flags |= B_DIRTY; // prevent eviction
-  release(&log.lock);
-}
 
+  release(&log.lock);
+  b->flags |= B_DIRTY; // prevent eviction
+}
