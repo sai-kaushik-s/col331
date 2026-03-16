@@ -198,19 +198,8 @@ yield(void)
 void
 forkret(void)
 {
-  static int first = 1;
-  // Still holding ptable.lock from scheduler.
+  // Release the lock held by the scheduler
   release(&ptable.lock);
-
-  if (first) {
-    // Some initialization functions must be run in the context
-    // of a regular process (e.g., they call sleep), and thus cannot
-    // be run from main().
-    first = 0;
-    iinit(ROOTDEV);
-    initlog(ROOTDEV);
-  }
-
   // Return to "caller", actually trapret (see allocproc).
 }
 
