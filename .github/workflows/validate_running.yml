@@ -26,7 +26,10 @@ jobs:
         platform: x64
 
     - name: Set up QEMU
-      uses: docker/setup-qemu-action@v4
+      # uses: docker/setup-qemu-action@v4
+      run: |
+        sudo apt update
+        sudo apt install -y qemu-system-x86 qemu-utils
 
     - name: Check versions
       run: |
