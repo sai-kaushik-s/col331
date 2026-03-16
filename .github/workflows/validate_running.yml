@@ -31,9 +31,8 @@ jobs:
     - name: Check versions
       run: |
         gcc-11 --version || true
-        gcc-12 --version || true
-        ls /usr/bin/gcc*
         qemu-system-x86_64 --version || true
         qemu-system-i386 --version || true
         ls /usr/bin/qemu* || true
-        make qemu || true
+        ls /proc/sys/fs/binfmt_misc || true
+        make CC=gcc-11 qemu || true
