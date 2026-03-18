@@ -1,2 +1,10 @@
 try/
+*.d
+*.o
+*.asm
+bootblock
+kernel
+kernel.sym
+vectors.S
+xv6.img
 .DS_Store
