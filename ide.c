@@ -7,9 +7,10 @@
 #include "proc.h"
 #include "x86.h"
 #include "traps.h"
+#include "sleeplock.h"
 #include "fs.h"
 #include "buf.h"
-#include "spinlock.h"
+
 
 #define SECTOR_SIZE   512
 #define IDE_BSY       0x80
@@ -26,7 +27,6 @@
 // idequeue->qnext points to the next buf to be processed.
 // You must hold idelock while manipulating queue.
 
-struct spinlock idelock;     
 static struct buf *idequeue;
 
 static int havedisk1;
@@ -49,7 +49,6 @@ ideinit(void)
 {
   int i;
 
-  initlock(&idelock, "ide");
   ioapicenable(IRQ_IDE, ncpu - 1);
   idewait(0);
 
@@ -101,8 +100,10 @@ void
 ideintr(void)
 {
   struct buf *b;
+  pushcli();
   // First queued buffer is the active request.
   if((b = idequeue) == 0){
+    popcli();
     return;
   }
   idequeue = b->qnext;
@@ -118,6 +119,7 @@ ideintr(void)
   // Start disk on next buf in queue.
   if(idequeue != 0)
     idestart(idequeue);
+  popcli();
 }
 
 // Sync buf with disk.
@@ -128,7 +130,7 @@ iderw(struct buf *b)
 {
   struct buf **pp;
 
-  acquire(&idelock);
+  pushcli();
 
   if((b->flags & (B_VALID|B_DIRTY)) == B_VALID)
     panic("iderw: nothing to do");
@@ -144,10 +146,12 @@ iderw(struct buf *b)
   // Start disk if necessary.
   if(idequeue == b)
     idestart(b);
-  release(&idelock);
-
   // Wait for request to finish.
   while((b->flags & (B_VALID|B_DIRTY)) != B_VALID) {
-    sleep(b);
+      popcli();
+    sleep(b); 
+    pushcli();
   }
+
+  popcli();
 }

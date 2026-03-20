@@ -9,11 +9,11 @@
 #include "traps.h"
 #include "fs.h"
 #include "file.h"
-#include "spinlock.h"
+
 
 static int panicked = 0;
 struct {
-  struct spinlock lock;
+ 
 } cons;
 static void
 printint(int xx, int base, int sign)
@@ -48,7 +48,7 @@ cprintf(char *fmt, ...)
   uint *argp;
   char *s;
 
-  acquire(&cons.lock);     
+  pushcli();     
   if (fmt == 0)
     panic("null fmt");
 
@@ -85,7 +85,8 @@ cprintf(char *fmt, ...)
       break;
     }
   }
-  release(&cons.lock);     
+     
+  popcli(); 
 }
 
 void
@@ -210,17 +211,17 @@ int
 consolewrite(struct inode *ip, char *buf, int n)
 {
   int i;
-  acquire(&cons.lock);
+  pushcli();
   for(i = 0; i < n; i++)
     consputc(buf[i] & 0xff);
-  release(&cons.lock);
+ 
+  popcli();
   return n;
 }
 
 void
 consoleinit(void)
 {
-  initlock(&cons.lock, "console"); 
   devsw[CONSOLE].write = consolewrite;
   devsw[CONSOLE].read = consoleread;
 }
