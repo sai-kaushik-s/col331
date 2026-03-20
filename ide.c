@@ -9,7 +9,6 @@
 #include "traps.h"
 #include "fs.h"
 #include "buf.h"
-#include "spinlock.h"
 
 #define SECTOR_SIZE   512
 #define IDE_BSY       0x80
@@ -26,7 +25,6 @@
 // idequeue->qnext points to the next buf to be processed.
 // You must hold idelock while manipulating queue.
 
-struct spinlock idelock;     
 static struct buf *idequeue;
 
 static int havedisk1;
@@ -49,7 +47,6 @@ ideinit(void)
 {
   int i;
 
-  initlock(&idelock, "ide");
   ioapicenable(IRQ_IDE, ncpu - 1);
   idewait(0);
 
@@ -113,7 +110,6 @@ ideintr(void)
 
   b->flags |= B_VALID;
   b->flags &= ~B_DIRTY;
-  wakeup(b);
 
   // Start disk on next buf in queue.
   if(idequeue != 0)
@@ -127,9 +123,7 @@ void
 iderw(struct buf *b)
 {
   struct buf **pp;
-
-  acquire(&idelock);
-
+  pushcli();
   if((b->flags & (B_VALID|B_DIRTY)) == B_VALID)
     panic("iderw: nothing to do");
   if(b->dev != 0 && !havedisk1)
@@ -144,10 +138,14 @@ iderw(struct buf *b)
   // Start disk if necessary.
   if(idequeue == b)
     idestart(b);
-  release(&idelock);
+  popcli();
 
   // Wait for request to finish.
-  while((b->flags & (B_VALID|B_DIRTY)) != B_VALID) {
-    sleep(b);
+  while((b->flags & (B_VALID|B_DIRTY)) != B_VALID)
+  {
+    // Warning: If we do not call noop(), compiler generates code that does not
+    // read "b->flags" again and therefore never come out of this while loop. 
+    // "b->flags" is modified by the trap handler in ideintr().  
+    noop();
   }
 }
