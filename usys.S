@@ -11,7 +11,6 @@
 SYSCALL(open)
 SYSCALL(write)
 SYSCALL(close)
-SYSCALL(exec)
 SYSCALL(uptime)
 SYSCALL(sleep)
 SYSCALL(getpid)
