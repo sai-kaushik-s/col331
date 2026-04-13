@@ -63,11 +63,7 @@ jobs:
           # The qemu target depends on xv6.img + fs.img and then launches QEMU
           # with -nographic. Not all early branches have all sources yet, so we
           # try 'make qemu' when the target exists, otherwise fall back to 'make'.
-          if grep -q '^qemu:' Makefile 2>/dev/null; then
-            BUILD_TARGET="qemu"
-          else
-            BUILD_TARGET=""
-          fi
+          BUILD_TARGET=""
           echo "Target: '${BUILD_TARGET:-default}'  Branch: ${{ matrix.branch }}"
 
           # Run make in the background; QEMU will block after a successful boot.
