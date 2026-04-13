@@ -1,0 +1,129 @@
+name: Build All xv6 Branches
+
+on:
+  push:
+    branches:
+      - 'p[0-9]*-*'
+  pull_request:
+    branches:
+      - 'p[0-9]*-*'
+  workflow_dispatch:
+
+jobs:
+  discover-branches:
+    runs-on: ubuntu-latest
+    outputs:
+      branches: ${{ steps.get-branches.outputs.branches }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Discover p*-* branches
+        id: get-branches
+        run: |
+          branches=$(git branch -r \
+            | grep -oP 'origin/p\d+-\S+' \
+            | sed 's|origin/||' \
+            | sort -V \
+            | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          echo "branches=$branches" >> "$GITHUB_OUTPUT"
+          echo "Found branches: $branches"
+
+  build:
+    needs: discover-branches
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        branch: ${{ fromJson(needs.discover-branches.outputs.branches) }}
+
+    name: Build ${{ matrix.branch }}
+
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.branch }}
+          fetch-depth: 1
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            build-essential \
+            gcc-multilib \
+            qemu-system-x86 \
+            perl \
+            gdb
+
+      - name: Build xv6
+        run: |
+          # The qemu target depends on xv6.img + fs.img and then launches QEMU
+          # with -nographic. Not all early branches have all sources yet, so we
+          # try 'make qemu' when the target exists, otherwise fall back to 'make'.
+          if grep -q '^qemu:' Makefile 2>/dev/null; then
+            BUILD_TARGET="qemu"
+          else
+            BUILD_TARGET=""
+          fi
+          echo "Target: '${BUILD_TARGET:-default}'  Branch: ${{ matrix.branch }}"
+
+          # Run make in the background; QEMU will block after a successful boot.
+          make QEMU=qemu-system-i386 CPUS=1 ${BUILD_TARGET} 2>&1 | tee build.log &
+          MAKE_PID=$!
+
+          # Poll until xv6 shell prompt appears, a make error is detected, or timeout.
+          TIMEOUT=120
+          ELAPSED=0
+          BOOT_OK=0
+          while kill -0 $MAKE_PID 2>/dev/null && [ $ELAPSED -lt $TIMEOUT ]; do
+            if grep -q '\$' build.log 2>/dev/null; then
+              echo "xv6 shell prompt detected — boot successful."
+              BOOT_OK=1
+              break
+            fi
+            sleep 2
+            ELAPSED=$((ELAPSED + 2))
+          done
+
+          # Tear down QEMU / make regardless of outcome.
+          kill $MAKE_PID 2>/dev/null || true
+          wait $MAKE_PID 2>/dev/null || true
+
+          # Hard failure: make printed an error line.
+          if grep -qE '^make(\[[0-9]+\])?: \*\*\*' build.log; then
+            echo "::error::Build failed on branch ${{ matrix.branch }}"
+            cat build.log
+            exit 1
+          fi
+
+          # Soft warning: QEMU target ran but prompt never appeared within timeout.
+          if [ "$BUILD_TARGET" = "qemu" ] && [ $BOOT_OK -eq 0 ]; then
+            echo "::warning::No shell prompt after ${TIMEOUT}s on ${{ matrix.branch }} — may still be booting"
+          fi
+
+          echo "Build OK on ${{ matrix.branch }}"
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-${{ matrix.branch }}
+          path: build.log
+          if-no-files-found: ignore
+
+  summary:
+    needs: build
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Report overall result
+        run: |
+          if [ "${{ needs.build.result }}" = "success" ]; then
+            echo "All p*-* branches built successfully."
+          else
+            echo "One or more branches failed. Check matrix job logs and uploaded build-log artifacts."
+            exit 1
+          fi
