@@ -1,0 +1,154 @@
+name: Build All xv6 Branches
+
+on:
+  push:
+    branches:
+      - 'p[0-9]*-*'
+      - main
+  pull_request:
+    branches:
+      - 'p[0-9]*-*'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  # ------------------------------------------------------------------
+  # Build the xv6 toolchain image from an inline Dockerfile heredoc
+  # and cache it so matrix jobs don't reinstall dependencies.
+  # ------------------------------------------------------------------
+  build-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build xv6-builder image
+        run: |
+          docker build --tag xv6-builder:latest - <<'EOF'
+          FROM ubuntu:24.04
+          RUN apt-get update -qq && \
+              apt-get install -y --no-install-recommends \
+                  build-essential \
+                  gcc-multilib \
+                  qemu-system-x86 \
+                  perl \
+                  gdb && \
+              rm -rf /var/lib/apt/lists/*
+          EOF
+
+      - name: Save image to cache
+        run: docker save xv6-builder:latest | gzip > xv6-builder.tar.gz
+
+      - name: Cache image
+        uses: actions/cache@v4
+        with:
+          path: xv6-builder.tar.gz
+          key: xv6-builder-${{ hashFiles('xv6-builder.tar.gz') }}
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: xv6-builder-image
+          path: xv6-builder.tar.gz
+          retention-days: 1
+
+  # ------------------------------------------------------------------
+  # Discover all p*-* branches.
+  # ------------------------------------------------------------------
+  discover-branches:
+    runs-on: ubuntu-latest
+    outputs:
+      branches: ${{ steps.get-branches.outputs.branches }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Discover p*-* branches
+        id: get-branches
+        run: |
+          branches=$(git branch -r \
+            | grep -oP 'origin/p\d+-\S+' \
+            | sed 's|origin/||' \
+            | sort -V \
+            | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          echo "branches=$branches" >> "$GITHUB_OUTPUT"
+          echo "Found branches: $branches"
+
+  # ------------------------------------------------------------------
+  # Build every branch inside the pre-built container — no apt-get.
+  # ------------------------------------------------------------------
+  build:
+    needs: [build-image, discover-branches]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        branch: ${{ fromJson(needs.discover-branches.outputs.branches) }}
+
+    name: Build ${{ matrix.branch }}
+
+    steps:
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: xv6-builder-image
+
+      - name: Load Docker image
+        run: docker load < xv6-builder.tar.gz
+
+      - name: Checkout branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ matrix.branch }}
+          fetch-depth: 1
+
+      - name: Build xv6
+        run: |
+          BUILD_TARGET=""
+          echo "Target: '${BUILD_TARGET:-default}'  Branch: ${{ matrix.branch }}"
+
+          docker run --rm \
+            --volume "$PWD:/xv6" \
+            --workdir /xv6 \
+            xv6-builder:latest \
+            bash -c "
+              make QEMU=qemu-system-i386 CPUS=1 ${BUILD_TARGET} 2>&1 | tee /xv6/build.log &
+              MAKE_PID=\$!
+              TIMEOUT=120; ELAPSED=0; BOOT_OK=0
+              while kill -0 \$MAKE_PID 2>/dev/null && [ \$ELAPSED -lt \$TIMEOUT ]; do
+                grep -q '\\\$' /xv6/build.log 2>/dev/null && { echo 'Shell prompt detected.'; BOOT_OK=1; break; }
+                sleep 2; ELAPSED=\$((ELAPSED + 2))
+              done
+              kill \$MAKE_PID 2>/dev/null || true
+              wait \$MAKE_PID 2>/dev/null || true
+              grep -qE '^make(\[[0-9]+\])?: \*\*\*' /xv6/build.log && exit 1
+              [ '${BUILD_TARGET}' = 'qemu' ] && [ \$BOOT_OK -eq 0 ] && \
+                echo '::warning::No shell prompt after '\$TIMEOUT's on ${{ matrix.branch }}'
+              exit 0
+            "
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: build-log-${{ matrix.branch }}
+          path: build.log
+          if-no-files-found: ignore
+
+  # ------------------------------------------------------------------
+  # Single pass/fail gate across the whole matrix.
+  # ------------------------------------------------------------------
+  summary:
+    needs: build
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Report overall result
+        run: |
+          if [ "${{ needs.build.result }}" = "success" ]; then
+            echo "✅ All p*-* branches built successfully."
+          else
+            echo "❌ One or more branches failed. Check matrix job logs and uploaded build-log artifacts."
+            exit 1
+          fi
